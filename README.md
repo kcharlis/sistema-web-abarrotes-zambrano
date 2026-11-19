@@ -73,7 +73,8 @@ El sistema implementa dos perfiles de acceso claramente diferenciados para prote
 ## 📦 5. Módulos Funcionales
 
 1. **Inventario Inteligente con Caducidad:**
-   * Clasificación por categorías: *Abarrotes*, *Lácteos y Refrigerados*, *Bebidas*, *Panadería*, *Aseo Hogar*, *Cuidado Personal*, *Snacks y Dulces*, *General*.
+   * Clasificación por 13 líneas comerciales: *Abarrotes*, *Granos y Cereales*, *Condimentos y Salsas*, *Aceites y Enlatados*, *Lácteos y Refrigerados*, *Carnes y Embutidos*, *Bebidas*, *Panadería*, *Snacks y Dulces*, *Frutas y Verduras*, *Aseo Hogar*, *Cuidado Personal* y *General*.
+   * Barra de filtro rápido con scroll horizontal que muestra todas las categorías estándar y también las categorías personalizadas que el tendero tenga en uso.
    * Fechas de vencimiento con semáforo cromático: Rojo (vencido o $\le 7$ días), Amarillo ($\le 30$ días) y Verde ($> 30$ días).
    * Soporte bimodal: venta al menudeo (Und, Libra, Kg) y venta por mayor (Bulto, Paca, Caja, Display).
    * Generación y descarga de códigos QR para estantería.

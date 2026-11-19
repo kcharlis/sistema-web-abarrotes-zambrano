@@ -65,16 +65,21 @@ El sistema implementa dos roles de operación definidos para resguardar la infor
 ## 📦 4. Módulos y Funcionalidades del Sistema
 
 ### 4.1. Mi Inventario y Almacén
-* **Categorización Estructurada:** Clasificación rápida por 8 categorías comerciales:
+* **Categorización Estructurada:** Clasificación rápida por 13 líneas comerciales propias de una tienda de abarrotes colombiana:
   1. *Abarrotes*
-  2. *Lácteos y Refrigerados*
-  3. *Bebidas*
-  4. *Panadería*
-  5. *Aseo Hogar*
-  6. *Cuidado Personal*
-  7. *Snacks y Dulces*
-  8. *General*
-* **Barra de Filtro Rápido:** Acceso inmediato con botones tipo píldora para filtrar el inventario por categoría con un solo toque.
+  2. *Granos y Cereales*
+  3. *Condimentos y Salsas*
+  4. *Aceites y Enlatados*
+  5. *Lácteos y Refrigerados*
+  6. *Carnes y Embutidos*
+  7. *Bebidas*
+  8. *Panadería*
+  9. *Snacks y Dulces*
+  10. *Frutas y Verduras*
+  11. *Aseo Hogar*
+  12. *Cuidado Personal*
+  13. *General*
+* **Barra de Filtro Rápido:** Acceso inmediato con botones tipo píldora y scroll horizontal para filtrar el inventario por categoría con un solo toque. Muestra las 13 categorías estándar y añade automáticamente cualquier categoría personalizada que ya esté registrada en los productos del tendero.
 * **Fechas de Vencimiento y Perecederos:** Campo de fecha (`YYYY-MM-DD`) con semáforo cromático dinámico:
   * 🔴 **Rojo:** Producto vencido o con vencimiento crítico ($\le 7$ días).
   * 🟡 **Amarillo:** Producto con vencimiento próximo ($\le 30$ días).

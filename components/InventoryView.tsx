@@ -21,16 +21,19 @@ const RETAIL_UNITS = ['Und', 'Libra', 'Litro', 'Kg', 'Gramo', 'Onza', 'Pqt'];
 const BULK_UNITS = ['Bulto', 'Paca', 'Caja', 'Saco', 'Display', 'Atado', 'Garrafa'];
 const INVENTORY_CATEGORIES = [
   'Abarrotes',
+  'Granos y Cereales',
+  'Condimentos y Salsas',
+  'Aceites y Enlatados',
   'Lácteos y Refrigerados',
+  'Carnes y Embutidos',
   'Bebidas',
   'Panadería',
+  'Snacks y Dulces',
+  'Frutas y Verduras',
   'Aseo Hogar',
   'Cuidado Personal',
-  'Snacks y Dulces',
   'General'
 ] as const;
-
-const FILTER_CATEGORIES = ['Todas', ...INVENTORY_CATEGORIES];
 
 export const getExpirationStatus = (expDate?: string) => {
   if (!expDate) return null;
@@ -708,6 +711,24 @@ const InventoryView: React.FC<InventoryViewProps> = ({
     return matchesSearch && matchesCategory;
   });
 
+  // Barra rápida: todas las categorías estándar más cualquier categoría
+  // personalizada que el tendero ya tenga registrada en su inventario.
+  const filterCategories = useMemo(() => {
+    const standard: readonly string[] = INVENTORY_CATEGORIES;
+    const inUse = new Set<string>();
+
+    inventory.forEach(item => {
+      const category = (item.category || 'General').trim() || 'General';
+      inUse.add(category);
+    });
+
+    const custom = Array.from(inUse)
+      .filter(category => category !== 'Todas' && !standard.includes(category))
+      .sort((a, b) => a.localeCompare(b, 'es'));
+
+    return ['Todas', ...standard, ...custom];
+  }, [inventory]);
+
   const handleGlobalScan = React.useCallback((code: string) => {
     const cleanCode = code.trim();
     if ('vibrate' in navigator) navigator.vibrate(100);
@@ -857,11 +878,11 @@ const InventoryView: React.FC<InventoryViewProps> = ({
 
       {/* Barra de Filtro Rápido por Categoría */}
       <div className="flex gap-1.5 overflow-x-auto no-scrollbar py-1">
-        {FILTER_CATEGORIES.map(cat => (
+        {filterCategories.map(cat => (
           <button
             key={cat}
             onClick={() => setSelectedCategory(cat)}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-black whitespace-nowrap transition-all ${
+            className={`shrink-0 px-3.5 py-1.5 rounded-xl text-xs font-black whitespace-nowrap transition-all ${
               selectedCategory === cat
                 ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
                 : 'bg-white dark:bg-gray-800 text-gray-500 hover:text-gray-900 dark:hover:text-white border border-gray-100 dark:border-gray-700'
