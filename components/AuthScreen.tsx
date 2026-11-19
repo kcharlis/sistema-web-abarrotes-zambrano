@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { auth } from '../lib/firebase';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, sendEmailVerification, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { Store, Mail, Lock, Loader2, AlertCircle, MailCheck, ShieldCheck, UserCircle, Eye, EyeOff, Shield, User } from 'lucide-react';
+import { Store, Mail, Lock, Loader2, AlertCircle, MailCheck, ShieldCheck, UserCircle, Eye, EyeOff, Shield, User, MapPin } from 'lucide-react';
 import { UserRole } from '../types';
 
 interface AuthScreenProps {
@@ -159,6 +159,12 @@ const AuthScreen: React.FC<AuthScreenProps> = ({
                 <p className="text-blue-600 dark:text-blue-400 text-xs font-black uppercase tracking-wider mt-1">
                   Sistema Integrado de Gestión para Abarrotes · Zambrano, Bolívar
                 </p>
+                <div className="mt-2 inline-flex items-start gap-1.5 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-900/30 text-left">
+                  <MapPin size={11} className="text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                  <span className="text-[8px] font-bold text-blue-700 dark:text-blue-300 uppercase leading-tight tracking-wide">
+                    Ribera del Río Magdalena · Montes de María · Con Fuerza y Voluntad para el comercio zambranero
+                  </span>
+                </div>
             </div>
 
             {/* Selector de Rol Inicial */}

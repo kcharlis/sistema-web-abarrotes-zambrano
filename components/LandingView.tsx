@@ -15,7 +15,8 @@ import {
   FileCheck,
   Scale,
   Award,
-  BookOpen
+  BookOpen,
+  MapPin
 } from 'lucide-react';
 
 interface LandingViewProps {
@@ -186,6 +187,16 @@ const LandingView: React.FC<LandingViewProps> = ({ onStart }) => {
               >
                 <Award className="w-3.5 h-3.5" /> Prototipo Funcional TRL 5 · UNAD 2026
               </motion.span>
+
+              <motion.div
+                variants={itemVariants}
+                className="inline-flex items-start gap-2 px-4 py-2 bg-slate-50 text-slate-600 rounded-2xl text-[10px] font-bold border border-slate-200/80 mb-6 max-w-xl"
+              >
+                <MapPin className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                <span className="text-left leading-relaxed uppercase tracking-wide">
+                  Ribera del Río Magdalena · Montes de María · Con Fuerza y Voluntad para el comercio zambranero
+                </span>
+              </motion.div>
               
               <motion.h1 
                 variants={itemVariants}
@@ -473,7 +484,7 @@ const LandingView: React.FC<LandingViewProps> = ({ onStart }) => {
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-6 text-slate-400 text-xs font-bold uppercase tracking-widest">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center text-white font-black">
-              TF
+              SZ
             </div>
             <span>SIGA Zambrano · Municipio de Zambrano, Bolívar (UNAD 2026)</span>
           </div>
