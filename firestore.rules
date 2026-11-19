@@ -1,0 +1,114 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(data) {
+      return isSignedIn() && request.auth.uid == data.user_id;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Validation Blueprints ---
+
+    function isValidInventory(data) {
+      return data.keys().hasAll(['name', 'stock', 'price', 'user_id']) &&
+             (data.get('id', '') is string) &&
+             data.name is string && data.name.size() <= 100 &&
+             data.stock is number &&
+             data.price is number && data.price >= 0 &&
+             data.user_id == request.auth.uid &&
+             (data.get('category', 'General') is string) &&
+             (data.get('unit', 'Und') is string) &&
+             (data.get('cost', 0) is number) &&
+             (data.get('minStock', 0) is number) &&
+             (data.get('supplierDebt', 0) is number) &&
+             (data.get('unitsPerPackage', 1) is number) &&
+             (data.get('bulkPrice', 0) == null || data.get('bulkPrice', 0) is number) &&
+             (data.get('profitPercent', 0) is number) &&
+             (data.get('bulkProfitPercent', 0) == null || data.get('bulkProfitPercent', 0) is number) &&
+             (data.get('bulkUnit', null) == null || data.bulkUnit is string) &&
+             (data.get('expirationDate', null) == null || data.expirationDate is string);
+    }
+
+    function isValidTransaction(data) {
+      return data.keys().hasAll(['type', 'amount', 'date', 'user_id']) &&
+             (data.get('id', '') is string) &&
+             data.type in ['venta', 'gasto'] &&
+             data.amount is number && data.amount >= 0 &&
+             data.date is string && 
+             data.user_id == request.auth.uid &&
+             (data.get('description', '') is string) &&
+             (data.get('items', []) is list);
+    }
+
+    function isValidDebtor(data) {
+      return data.keys().hasAll(['name', 'debt', 'user_id']) &&
+             (data.get('id', '') is string) &&
+             data.name is string && data.name.size() <= 100 &&
+             data.debt is number && data.debt >= 0 &&
+             data.user_id == request.auth.uid &&
+             (data.get('phone', null) == null || data.phone is string) &&
+             (data.get('initial', '') is string) &&
+             (data.get('risk', 'low') in ['low', 'medium', 'high']) &&
+             (data.get('payments', []) is list) &&
+             (data.get('consentAccepted', null) == null || data.consentAccepted is bool) &&
+             (data.get('consentDate', null) == null || data.consentDate is string);
+    }
+
+    // --- Collections ---
+
+    match /inventory/{itemId} {
+      allow get: if isOwner(existing());
+      allow list: if isOwner(existing());
+      allow create: if isSignedIn() && isValidId(itemId) && isValidInventory(incoming());
+      allow update: if isSignedIn() && isOwner(existing()) && isValidInventory(incoming()) && (
+        incoming().user_id == existing().user_id
+      );
+      allow delete: if isSignedIn() && isOwner(existing());
+    }
+
+    match /transactions/{transactionId} {
+      allow get: if isOwner(existing());
+      allow list: if isOwner(existing());
+      allow create: if isSignedIn() && isValidId(transactionId) && isValidTransaction(incoming());
+      allow update: if isSignedIn() && isOwner(existing()) && isValidTransaction(incoming()) && (
+        incoming().user_id == existing().user_id
+      );
+      allow delete: if isSignedIn() && isOwner(existing());
+    }
+
+    match /debtors/{debtorId} {
+      allow get: if isOwner(existing());
+      allow list: if isOwner(existing());
+      allow create: if isSignedIn() && isValidId(debtorId) && isValidDebtor(incoming());
+      allow update: if isSignedIn() && isOwner(existing()) && isValidDebtor(incoming()) && (
+        incoming().user_id == existing().user_id
+      );
+      allow delete: if isSignedIn() && isOwner(existing());
+    }
+  }
+}

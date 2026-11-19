@@ -1,0 +1,8 @@
+{
+  "name": "SIGA Zambrano 1.0",
+  "description": "Una aplicación de gestión móvil para pequeños comercios, con control de inventario, fiados, ventas y gastos.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": []
+}

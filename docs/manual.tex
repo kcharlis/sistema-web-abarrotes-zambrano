@@ -1,0 +1,203 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[spanish,es-tabla]{babel}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{geometry}
+\usepackage{fancyhdr}
+\usepackage{booktabs}
+\usepackage{xcolor}
+
+% Configuración de márgenes
+\geometry{
+ a4paper,
+ total={170mm,257mm},
+ left=25mm,
+ top=25mm,
+}
+
+% Colores institucionales y de acento
+\definecolor{unadblue}{RGB}{0, 84, 166}
+\definecolor{unadorange}{RGB}{236, 102, 8}
+\definecolor{emeraldgreen}{RGB}{16, 185, 129}
+
+% Configuración de hipervínculos
+\hypersetup{
+    colorlinks=true,
+    linkcolor=unadblue,
+    filecolor=magenta,      
+    urlcolor=unadblue,
+    pdftitle={Manual de Usuario - SIGA Zambrano},
+    pdfpagemode=FullScreen,
+}
+
+% Cabecera y Pie de página
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small SIGA Zambrano · Prototipo Funcional TRL 5}
+\fancyhead[R]{\small UNAD · Proyecto de Grado 202016907\_2}
+\fancyfoot[C]{\thepage}
+
+\title{
+    \vspace{-1.5cm}
+    \textbf{\Huge SIGA Zambrano} \\
+    \vspace{0.4cm}
+    \Large \textbf{Sistema web para la gestión integrada de inventario, ventas y clientes en tiendas de abarrotes del municipio de Zambrano, Bolívar} \\
+    \vspace{0.3cm}
+    \large Manual de Usuario y Documentación Técnica (Nivel TRL 5)
+}
+
+\author{
+    \textbf{Autores del Proyecto:} \\
+    \textbf{Angélica María Daza Ochoa} -- \textit{Product Owner \& Levantamiento de Requisitos} \\
+    \textbf{Anderson David Tapia Ochoa} -- \textit{Diseñador UI/UX \& QA} \\
+    \textbf{Carlos Guillermo Herrera Meza} -- \textit{Arquitecto de Software \& Desarrollador Frontend/Cloud} \\
+    \vspace{0.4cm} \\
+    \textbf{Tutor de Proyecto de Grado:} \\
+    \textbf{Orlando Gómez Barboza} \\
+    \vspace{0.4cm} \\
+    \textbf{Universidad Nacional Abierta y a Distancia (UNAD)} \\
+    \textbf{Escuela de Ciencias Básicas, Tecnología e Ingeniería (ECBTI)} \\
+    \textbf{Ingeniería de Sistemas · CEAD Plato (ZCAR)} \\
+    \textbf{Curso: Proyecto de Grado (Código: 202016907) · Grupo: 202016907\_2}
+}
+
+\date{Noviembre de 2026}
+
+\begin{document}
+
+\maketitle
+
+\newpage
+\tableofcontents
+\newpage
+
+\section{Introducción y Contexto del Proyecto}
+
+El aplicativo \textbf{SIGA Zambrano} constituye el prototipo funcional validado en entorno simulado y relevante (\textbf{Nivel TRL 5}) desarrollado en el marco del curso de Proyecto de Grado de la Universidad Nacional Abierta y a Distancia (UNAD).
+
+El proyecto aborda la problemática operativa de las tiendas de abarrotes en el municipio de \textbf{Zambrano, Bolívar}, donde la gestión comercial tradicional se efectúa mediante cuadernos de papel, carencia de control de fechas de caducidad en productos perecederos, estimaciones imprecisas de márgenes de ganancia y dificultades en el recaudo de ventas a crédito (fiados). 
+
+\textbf{SIGA Zambrano} suministra una solución basada en arquitectura web moderna, con soporte \textit{Mobile-First}, persistencia de datos local offline y sincronización en la nube con Google Firebase Cloud Firestore.
+
+\section{Marco Normativo y Cumplimiento Legal}
+
+El prototipo incorpora formalmente los siguientes estándares legales colombianos e internacionales de ingeniería de software:
+
+\begin{enumerate}
+    \item \textbf{Ley 1581 de 2012 (Protección de Datos Personales / Habeas Data):} Al momento de registrar clientes para el otorgamiento de créditos y fiados en el sistema, se exige de manera obligatoria una casilla de consentimiento informado del titular. La fecha y confirmación de autorización se registran de forma inmutable en la base de datos (\texttt{consentAccepted} y \texttt{consentDate}).
+    \item \textbf{Ley 527 de 1999 (Comercio Electrónico y Mensajes de Datos):} Todos los comprobantes de venta digitales emitidos en PDF cuentan con valor probatorio mercantil al incorporar un identificador transaccional único (\texttt{tx.id}), estampado cronológico exacto y desglose detallado de valores en pesos colombianos (COP).
+    \item \textbf{Ley 1480 de 2011 (Estatuto del Consumidor):} Se garantiza la transparencia de precios al consumidor final, exhibiendo con claridad los precios unitarios al menudeo y los precios mayoristas por empaque cerrado (bulto, paca o caja), junto al historial completo de abonos parciales.
+    \item \textbf{ISO/IEC/IEEE 29148:2018 (Ingeniería de Requisitos):} El aplicativo fue especificado mediante técnicas formales de ingeniería de requisitos y casos de uso estructurados para micro-negocios minoristas.
+\end{enumerate}
+
+\section{Arquitectura del Sistema y Persistencia Offline}
+
+El sistema implementa una arquitectura serverless desacoplada de alto rendimiento:
+
+\begin{itemize}
+    \item \textbf{Frontend Reactivo:} Desarrollado en \textbf{React 18} con \textbf{TypeScript 5}, empaquetado mediante \textbf{Vite 5} y maquetado con \textbf{Tailwind CSS 3.4} bajo diseño responsive optimizado para dispositivos móviles y terminales táctiles de bajo costo.
+    \item \textbf{Nube y Base de Datos NoSQL:} Uso de \textbf{Cloud Firestore v12} con reglas de seguridad granular en \texttt{firestore.rules} que limitan estrictamente las operaciones de lectura y escritura al identificador autenticado del usuario (\texttt{request.auth.uid == data.user\_id}).
+    \item \textbf{Persistencia Offline Nativa (IndexedDB):} Inicialización mediante:
+    \begin{quote}
+    \texttt{initializeFirestore(app, \{ localCache: persistentLocalCache(\{ tabManager: persistentMultipleTabManager() \}) \})}
+    \end{quote}
+    Esto permite que la aplicación continúe operando sin internet en zonas rurales de Zambrano, almacenando las transacciones e inventario localmente en el navegador y sincronizándolas automáticamente al recuperar la señal.
+    \item \textbf{Periféricos Digitales:} Integración de \texttt{html5-qrcode} para captura de códigos de barras (EAN-13, UPC) y QR desde la cámara del dispositivo móvil, y de \texttt{jspdf} / \texttt{jspdf-autotable} para generación de comprobantes y etiquetas físicas.
+\end{itemize}
+
+\section{Control de Acceso Basado en Roles (RBAC) y Seguridad HTTP 403}
+
+Para salvaguardar la privacidad financiera del establecimiento, el sistema define dos perfiles de usuario:
+
+\subsection{Definición de Roles}
+\begin{itemize}
+    \item \textbf{Administrador (\texttt{admin}):} Propietario del negocio. Posee acceso integral a costos de adquisición, auditoría de ventas, márgenes proyectados de ganancia, eliminación de productos y anulación de transacciones.
+    \item \textbf{Dependiente (\texttt{dependiente}):} Cajero o colaborador de mostrador. Autorizado para ventas POS, búsqueda en catálogo, registro de entradas de mercancía y gestión de clientes. Posee bloqueo estricto en módulos de auditoría y finanzas sensibles.
+\end{itemize}
+
+\subsection{Mecanismos de Protección Implementados}
+\begin{enumerate}
+    \item \textbf{Selector en Autenticación:} Permite definir el rol en la pantalla de bienvenida (\texttt{AuthScreen.tsx}).
+    \item \textbf{Badge Interactivo en Cabecera:} Muestra en todo momento el rol en ejecución (\texttt{Rol: Admin} o \texttt{Rol: Dependiente}).
+    \item \textbf{Elevación de Privilegios por PIN:} Para transicionar de \texttt{dependiente} a \texttt{admin}, el sistema solicita un código PIN administrativo:
+    \begin{center}
+        \fbox{\textbf{PIN Demostrativo de Administrador: 2026}}
+    \end{center}
+    \item \textbf{Bloqueo HTTP 403 en Reportes Financieros:} Si un usuario dependiente intenta ingresar al módulo de \textit{Reportes}, la interfaz bloquea el acceso mostrando la pantalla de \textbf{Acceso Denegado (Error 403)}, con instrucciones para reingresar como administrador.
+    \item \textbf{Restricciones en Inventario y Caja:} En rol dependiente se deshabilitan los campos de modificación de costos, márgenes de ganancia, botones de eliminación de catálogo y anulación de transacciones.
+\end{enumerate}
+
+\section{Guía de Operación de Módulos}
+
+\subsection{Módulo de Inventario y Almacén}
+\begin{enumerate}
+    \item \textbf{Categorías de Producto:} Los artículos se clasifican en 8 categorías comerciales (\textit{Abarrotes, Lácteos y Refrigerados, Bebidas, Panadería, Aseo Hogar, Cuidado Personal, Snacks y Dulces, General}). La lista superior cuenta con una barra de filtrado rápido por categoría.
+    \item \textbf{Control de Perecederos y Caducidad:} Al registrar o editar un producto, se dispone del campo \textit{Fecha de Vencimiento} (\texttt{expirationDate}). La tarjeta del producto despliega un indicador cromático:
+    \begin{itemize}
+        \item \textcolor{red}{\textbf{Rojo:}} Producto ya vencido o con vencimiento en $\le 7$ días.
+        \item \textcolor{unadorange}{\textbf{Amarillo:}} Producto próximo a vencer ($\le 30$ días).
+        \item \textcolor{emeraldgreen}{\textbf{Verde:}} Producto con vigencia superior a 30 días.
+    \end{itemize}
+    \item \textbf{Banner de Resumen Operativo:} La cabecera alerta la cantidad de productos en stock bajo o cercanos a caducar.
+    \item \textbf{Soporte Bimodal (Menudeo y Mayorista):} Cálculo automatizado de costos divididos y precio sugerido por unidad y por empaque cerrado (bulto, paca o caja).
+    \item \textbf{Generación de Etiquetas QR:} Emisión de documentos PDF listos para imprimir con el pie rotulado: \texttt{SIGA Zambrano - [Unidad]}.
+\end{enumerate}
+
+\subsection{Punto de Venta (POS) y Facturación}
+\begin{enumerate}
+    \item En la pantalla principal, pulse el botón \textbf{VENDER}.
+    \item Seleccione los productos directamente o active el lector de cámara (\textbf{QR o Barras}).
+    \item Si el pago es en efectivo, ingrese el valor entregado por el cliente utilizando los atajos de billetes colombianos (\$2k, \$5k, \$10k, \$20k, \$50k, \$100k); el sistema calculará el cambio o las vueltas automáticamente.
+    \item El descuento de inventario se ejecuta de forma atómica (\texttt{writeBatch}) en Firestore.
+    \item Descargue o imprima el comprobante digital en formato térmico válido según la Ley 527 de 1999.
+\end{enumerate}
+
+\subsection{Control de Fiados y WhatsApp (Ley 1581 de 2012)}
+\begin{enumerate}
+    \item Al registrar un nuevo deudor, es obligatorio marcar la casilla: \textit{``El cliente autoriza el tratamiento de sus datos personales (Ley 1581 de 2012)''}. Sin esta confirmación, el sistema impide almacenar el registro.
+    \item El semáforo de cartera clasifica el riesgo según el monto adeudado y los días de mora.
+    \item El botón de WhatsApp genera un enlace directo (\texttt{wa.me}) con un mensaje cordial de cobro predeterminado.
+    \item Los abonos parciales se registran en un historial inmutable con fecha y hora.
+\end{enumerate}
+
+\subsection{Reportes y Utilidades (Exclusivo Administrador)}
+Permite consultar el balance consolidado del día:
+\begin{equation}
+    \text{Saldo Neto} = \text{Ventas Realizadas} - \text{Gastos Administrativos}
+\end{equation}
+Desglosa el Costo de Mercancía Vendida (CMV), la ganancia bruta y la ganancia neta con gráficos analíticos interactivos y exportación de planillas valorizadas a PDF y Excel.
+
+\section{Instalación y Despliegue Local}
+
+Para desplegar y validar el proyecto en entorno de desarrollo:
+
+\begin{verbatim}
+# 1. Instalar dependencias del proyecto
+npm install
+
+# 2. Verificación de tipos TypeScript
+npx tsc --noEmit
+
+# 3. Iniciar entorno de desarrollo local (puerto 3000)
+npm run dev
+
+# 4. Generación de artefacto de producción (dist/)
+npm run build
+\end{verbatim}
+
+\section{Conclusiones y Créditos Académicos}
+
+El prototipo funcional **SIGA Zambrano** satisface los objetivos de innovación tecnológica comunitaria y de práctica simulada del programa de Ingeniería de Sistemas de la UNAD, ofreciendo una herramienta adaptada a la idiosincrasia y realidad del comercio local en Zambrano, Bolívar.
+
+\vspace{0.5cm}
+\noindent \textbf{Institución:} Universidad Nacional Abierta y a Distancia -- UNAD \\
+\textbf{Escuela:} ECBTI \\
+\textbf{Programa:} Ingeniería de Sistemas \\
+\textbf{Curso:} Proyecto de Grado (202016907\_2) \\
+\textbf{Fecha de Entrega:} Noviembre de 2026
+
+\end{document}

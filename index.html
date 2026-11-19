@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SIGA Zambrano</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@700;800;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+              display: ['Outfit', 'sans-serif'],
+            },
+            animation: {
+              'fade-in': 'fadeIn 0.5s ease-out',
+              'slide-in-up': 'slideInUp 0.3s ease-out',
+              'float': 'float 6s ease-in-out infinite',
+            },
+            keyframes: {
+              fadeIn: {
+                '0%': { opacity: '0' },
+                '100%': { opacity: '1' },
+              },
+              slideInUp: {
+                '0%': { transform: 'translateY(100%)' },
+                '100%': { transform: 'translateY(0)' },
+              },
+              float: {
+                '0%, 100%': { transform: 'translateY(0)' },
+                '50%': { transform: 'translateY(-20px)' },
+              }
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      
+      #reader, #pos-reader { width: 100%; border-radius: 12px; overflow: hidden; }
+      #reader video, #pos-reader video { object-fit: cover; border-radius: 12px; }
+
+      @media print {
+        /* Ocultar todo excepto lo que queremos imprimir */
+        body * { visibility: hidden !important; }
+        #root, #root * { visibility: hidden !important; }
+        .print-container, .print-container * { 
+          visibility: visible !important; 
+          display: block !important;
+        }
+        
+        .print-container {
+          position: fixed !important;
+          left: 0 !important;
+          top: 0 !important;
+          width: 100% !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          background: white !important;
+        }
+
+        /* Estilo para Tickets de Venta (Térmico 80mm) */
+        .sale-receipt {
+          width: 80mm !important;
+          margin: 0 auto !important;
+          padding: 5mm !important;
+          font-family: 'Courier New', monospace !important;
+          color: black !important;
+          font-size: 12px !important;
+        }
+
+        /* Estilo para Etiquetas de Estantería (Grid) */
+        .print-grid {
+          display: grid !important;
+          grid-template-columns: repeat(2, 1fr) !important;
+          gap: 10px !important;
+          padding: 10px !important;
+          width: 100% !important;
+        }
+
+        .print-ticket {
+          border: 1px solid black !important;
+          padding: 10px !important;
+          text-align: center !important;
+          page-break-inside: avoid !important;
+          min-height: 40mm !important;
+          display: flex !important;
+          flex-direction: column !important;
+          align-items: center !important;
+          justify-content: center !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>

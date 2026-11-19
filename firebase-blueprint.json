@@ -1,0 +1,76 @@
+{
+  "entities": {
+    "InventoryItem": {
+      "title": "Inventory Item",
+      "description": "An item in the shop inventory",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "stock": { "type": "number" },
+        "initialStock": { "type": "number" },
+        "minStock": { "type": "number" },
+        "unit": { "type": "string" },
+        "cost": { "type": "number" },
+        "price": { "type": "number" },
+        "isPaid": { "type": "boolean" },
+        "supplierDebt": { "type": "number" },
+        "icon": { "type": "string" },
+        "bulkUnit": { "type": "string" },
+        "unitsPerPackage": { "type": "number" },
+        "bulkPrice": { "type": "number" },
+        "profitPercent": { "type": "number" },
+        "bulkProfitPercent": { "type": "number" },
+        "barcode": { "type": "string" },
+        "user_id": { "type": "string" }
+      },
+      "required": ["id", "name", "stock", "price", "user_id"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "A sale or expense record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["venta", "gasto"] },
+        "amount": { "type": "number" },
+        "date": { "type": "string", "format": "date-time" },
+        "description": { "type": "string" },
+        "items": { "type": "array" },
+        "user_id": { "type": "string" }
+      },
+      "required": ["id", "type", "amount", "date", "user_id"]
+    },
+    "Debtor": {
+      "title": "Debtor",
+      "description": "A person who owes money (fiados)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "debt": { "type": "number" },
+        "risk": { "type": "string", "enum": ["low", "medium", "high"] },
+        "initial": { "type": "string" },
+        "payments": { "type": "array" },
+        "user_id": { "type": "string" }
+      },
+      "required": ["id", "name", "debt", "user_id"]
+    }
+  },
+  "firestore": {
+    "/inventory/{itemId}": {
+      "schema": "InventoryItem",
+      "description": "Collection of inventory items"
+    },
+    "/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Collection of sales and expenses"
+    },
+    "/debtors/{debtorId}": {
+      "schema": "Debtor",
+      "description": "Collection of debtors"
+    }
+  }
+}

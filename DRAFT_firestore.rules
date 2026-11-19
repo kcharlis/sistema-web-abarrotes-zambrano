@@ -1,0 +1,101 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Validation Blueprints ---
+
+    function isValidInventory(data) {
+      return data.keys().hasAll(['id', 'name', 'stock', 'price', 'user_id']) &&
+             data.id is string && data.id.size() <= 128 &&
+             data.name is string && data.name.size() <= 100 &&
+             data.stock is number &&
+             data.price is number && data.price >= 0 &&
+             data.user_id == request.auth.uid &&
+             (data.get('category', 'General') is string) &&
+             (data.get('unit', 'Und') is string) &&
+             (data.get('cost', 0) is number) &&
+             (data.get('supplierDebt', 0) is number);
+    }
+
+    function isValidTransaction(data) {
+      return data.keys().hasAll(['id', 'type', 'amount', 'date', 'user_id']) &&
+             data.id is string && data.id.size() <= 128 &&
+             data.type in ['venta', 'gasto'] &&
+             data.amount is number && data.amount >= 0 &&
+             data.date is string && // ISO Date expected
+             data.user_id == request.auth.uid &&
+             (data.get('items', []) is list);
+    }
+
+    function isValidDebtor(data) {
+      return data.keys().hasAll(['id', 'name', 'debt', 'user_id']) &&
+             data.id is string && data.id.size() <= 128 &&
+             data.name is string && data.name.size() <= 100 &&
+             data.debt is number && data.debt >= 0 &&
+             data.user_id == request.auth.uid &&
+             (data.get('phone', null) == null || data.phone is string) &&
+             (data.get('risk', 'low') in ['low', 'medium', 'high']) &&
+             (data.get('payments', []) is list);
+    }
+
+    // --- Collections ---
+
+    match /inventory/{itemId} {
+      allow read: if isOwner(existing().user_id);
+      allow create: if isVerified() && isValidId(itemId) && isValidInventory(incoming());
+      allow update: if isVerified() && isOwner(existing().user_id) && isValidInventory(incoming()) && (
+        incoming().user_id == existing().user_id // Immutable Owner
+      );
+      allow delete: if isVerified() && isOwner(existing().user_id);
+    }
+
+    match /transactions/{transactionId} {
+      allow read: if isOwner(existing().user_id);
+      allow create: if isVerified() && isValidId(transactionId) && isValidTransaction(incoming());
+      allow update: if isVerified() && isOwner(existing().user_id) && isValidTransaction(incoming()) && (
+        incoming().user_id == existing().user_id
+        // Transactions are generally immutable in this app's UI except for some specific edits
+      );
+      allow delete: if isVerified() && isOwner(existing().user_id);
+    }
+
+    match /debtors/{debtorId} {
+      allow read: if isOwner(existing().user_id);
+      allow create: if isVerified() && isValidId(debtorId) && isValidDebtor(incoming());
+      allow update: if isVerified() && isOwner(existing().user_id) && isValidDebtor(incoming()) && (
+        incoming().user_id == existing().user_id
+      );
+      allow delete: if isVerified() && isOwner(existing().user_id);
+    }
+  }
+}
