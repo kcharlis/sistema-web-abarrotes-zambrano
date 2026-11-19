@@ -10,9 +10,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "barcode-detector": "^3.2.4",
     "firebase": "^12.12.1",
     "html2canvas": "^1.4.1",
-    "html5-qrcode": "^2.3.8",
     "jspdf": "^2.5.1",
     "jspdf-autotable": "^3.8.2",
     "lucide-react": "^0.344.0",

@@ -42,7 +42,7 @@
   * **Persistencia Offline Nativa:** `initializeFirestore` con `persistentLocalCache({ tabManager: persistentMultipleTabManager() })` respaldada en IndexedDB del navegador, garantizando operatividad ininterrumpida ante caídas de conectividad rural y sincronización bidireccional automática.
   * **Firebase Authentication:** Gestión de sesiones segura con persistencia local por dispositivo.
 * **Periféricos & Hardware:**
-  * **Escaneo Óptico por Cámara:** Integración de `html5-qrcode` para lectura rápida de códigos de barras (EAN-13, UPC) y códigos QR propios.
+  * **Escaneo Óptico por Cámara:** Integración de `barcode-detector` (ZXing-C++ WebAssembly) para lectura rápida de códigos de barras (EAN-13, UPC, Code 128) y códigos QR propios.
   * **Generación de Documentos:** `jspdf`, `jspdf-autotable` y `qrcode` para impresión de tirillas térmicas y planillas de códigos QR individuales y por lote.
   * **Analítica & Reportes:** `recharts` para proyección de utilidades y `xlsx` para auditoría contable.
 

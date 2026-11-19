@@ -96,7 +96,7 @@ const LandingView: React.FC<LandingViewProps> = ({ onStart }) => {
     { name: "React 18 & TypeScript", role: "Interfaz reactiva, tipado seguro y componentes modulares" },
     { name: "Firebase Cloud Firestore v12", role: "Base de datos NoSQL serverless con sincronización offline nativa (IndexedDB)" },
     { name: "Tailwind CSS & Motion", role: "Diseño Mobile-First adaptado al contexto operativo del tendero" },
-    { name: "html5-qrcode & jsPDF", role: "Escaneo óptico desde cámara móvil y generación de comprobantes digitales" }
+    { name: "barcode-detector & jsPDF", role: "Escaneo óptico desde cámara móvil y generación de comprobantes digitales" }
   ];
 
   const teamMembers = [

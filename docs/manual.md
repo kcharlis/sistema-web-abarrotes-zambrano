@@ -81,7 +81,7 @@ El sistema implementa dos roles de operación definidos para resguardar la infor
   * 🟢 **Verde/Neutro:** Producto con margen seguro ($> 30$ días).
 * **Banner de Alertas Operativas:** Notificación superior automática con el conteo de existencias bajo stock mínimo y productos próximos a caducar.
 * **Precios Bimodales (Menudeo y Mayorista):** Manejo simultáneo de costo y precio por unidad y por empaque mayorista (Bulto, Paca, Caja, Display, Saco, Garrafa).
-* **Escaneo y Generación de Códigos QR/Barras:** Escaneo por cámara web/móvil con `html5-qrcode` y exportación de etiquetas para estantes en formato PDF con la nomenclatura `SIGA Zambrano - [Unidad]`.
+* **Escaneo y Generación de Códigos QR/Barras:** Escaneo por cámara web/móvil con `barcode-detector` (ZXing-C++ WebAssembly) y exportación de etiquetas para estantes en formato PDF con la nomenclatura `SIGA Zambrano - [Unidad]`.
 
 ### 4.2. Ventas POS y Calculadora
 * **Terminal POS Ágil:** Búsqueda rápida por nombre o escaneo óptico del código de barras.

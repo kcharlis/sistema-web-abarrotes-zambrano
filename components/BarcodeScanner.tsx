@@ -1,11 +1,16 @@
-import React, { useEffect, useRef, useState } from 'react';
-import {
-  Html5Qrcode,
-  Html5QrcodeSupportedFormats,
-  Html5QrcodeCameraScanConfig,
-  CameraDevice
-} from 'html5-qrcode';
-import { X, ScanBarcode, SwitchCamera, ImageUp, Loader2 } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { BarcodeDetector, prepareZXingModule } from 'barcode-detector/ponyfill';
+import type { BarcodeFormat } from 'barcode-detector/ponyfill';
+import zxingWasmUrl from 'zxing-wasm/reader/zxing_reader.wasm?url';
+import { X, ScanBarcode, SwitchCamera, ImageUp, Loader2, CheckCircle2 } from 'lucide-react';
+
+// Empaqueta el wasm con la app (evita depender del CDN de jsDelivr).
+prepareZXingModule({
+  overrides: {
+    locateFile: (path: string, prefix: string) =>
+      path.endsWith('.wasm') ? zxingWasmUrl : `${prefix}${path}`
+  }
+});
 
 interface BarcodeScannerProps {
   onScan: (decodedText: string) => void;
@@ -16,46 +21,41 @@ interface BarcodeScannerProps {
   errorMessage?: string | null;
 }
 
-type CameraAttempt = {
-  deviceId?: string;
-  facingMode?: 'user' | 'environment';
-  hd: boolean;
+type ScanMode = 'qr' | 'barcode' | 'all';
+type CameraInfo = { id: string; label: string };
+
+const QR_FORMATS: BarcodeFormat[] = ['qr_code'];
+const LINEAR_FORMATS: BarcodeFormat[] = [
+  'ean_13',
+  'ean_8',
+  'upc_a',
+  'upc_e',
+  'code_128',
+  'code_39',
+  'code_93',
+  'itf',
+  'codabar'
+];
+
+const MODE_FORMATS: Record<ScanMode, BarcodeFormat[]> = {
+  qr: QR_FORMATS,
+  barcode: LINEAR_FORMATS,
+  all: [...LINEAR_FORMATS, ...QR_FORMATS]
 };
 
-const VIRTUAL_CAMERA_PATTERN = /virtual|logi capture|obs|manycam|snap camera|xsplit/i;
+const VIRTUAL_CAMERA_PATTERN = /virtual|logi capture|obs|manycam|snap camera|xsplit|droidcam|iriun/i;
+const BACK_CAMERA_PATTERN = /back|rear|trasera|posterior|environment|world|wide/i;
+const DETECT_INTERVAL_MS = 120;
+const COOLDOWN_MS = 2000;
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-const getFormatsForMode = (mode: 'qr' | 'barcode' | 'all'): Html5QrcodeSupportedFormats[] => {
-  if (mode === 'qr') {
-    return [Html5QrcodeSupportedFormats.QR_CODE];
-  }
-
-  const barcodeFormats = [
-    Html5QrcodeSupportedFormats.EAN_13,
-    Html5QrcodeSupportedFormats.EAN_8,
-    Html5QrcodeSupportedFormats.UPC_A,
-    Html5QrcodeSupportedFormats.UPC_E,
-    Html5QrcodeSupportedFormats.CODE_128,
-    Html5QrcodeSupportedFormats.CODE_39,
-    Html5QrcodeSupportedFormats.CODE_93,
-    Html5QrcodeSupportedFormats.ITF
-  ];
-
-  return mode === 'barcode'
-    ? barcodeFormats
-    : [...barcodeFormats, Html5QrcodeSupportedFormats.QR_CODE];
-};
 
 const getErrorParts = (error: unknown) => {
   if (typeof error === 'string') {
     return { name: 'Error', message: error };
   }
   const err = error as { name?: string; message?: string };
-  return {
-    name: err?.name || 'Error',
-    message: err?.message || ''
-  };
+  return { name: err?.name || 'Error', message: err?.message || '' };
 };
 
 const getTechnicalError = (error: unknown) => {
@@ -69,14 +69,14 @@ const getFriendlyCameraError = (error: unknown) => {
   const { name, message } = getErrorParts(error);
   const raw = `${name} ${message}`;
 
-  if (/NotAllowed|Permission|PermissionDenied/i.test(raw)) {
+  if (/NotAllowed|Permission|PermissionDenied|SecurityError/i.test(raw)) {
     return 'No hay permiso para usar la cámara. Habilítalo en el navegador o usa "Subir foto".';
   }
   if (/NotReadable|Device in use|TrackStart|Could not start video/i.test(raw)) {
-    return 'La cámara está ocupada por otra aplicación (por ejemplo Logi Capture u OBS). Ciérrala o usa "Subir foto".';
+    return 'La cámara está ocupada por otra aplicación (Logi Capture, OBS, Zoom…). Ciérrala o usa "Subir foto".';
   }
   if (/Overconstrained|ConstraintNotSatisfied|Constraints/i.test(raw)) {
-    return 'La cámara no admite la configuración solicitada. Se intentó sin resolución HD, pero no respondió.';
+    return 'La cámara no admite la resolución solicitada y no respondió al reintento básico.';
   }
   if (/NotFound|DevicesNotFound|Requested device/i.test(raw)) {
     return 'No se encontró una cámara disponible en este equipo.';
@@ -84,357 +84,330 @@ const getFriendlyCameraError = (error: unknown) => {
   return 'No se pudo iniciar ninguna cámara. Puedes usar "Subir foto" como respaldo.';
 };
 
-const isPermissionError = (error: unknown) => {
-  const { name, message } = getErrorParts(error);
-  return /NotAllowed|Permission|PermissionDenied/i.test(`${name} ${message}`);
+const cameraScore = (camera: CameraInfo) => {
+  let score = 0;
+  if (camera.label && !VIRTUAL_CAMERA_PATTERN.test(camera.label)) score += 4;
+  else if (!camera.label) score += 1;
+  if (BACK_CAMERA_PATTERN.test(camera.label)) score += 2;
+  return score;
 };
 
-const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ 
-  onScan, 
-  onClose, 
-  title = "Escaneando...", 
-  scannerId = "barcode-reader",
+const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
+  onScan,
+  onClose,
+  title = 'Escaneando...',
+  scannerId = 'barcode-reader',
   mode = 'all',
   errorMessage = null
 }) => {
   const onScanRef = useRef(onScan);
-  const scannerRef = useRef<Html5Qrcode | null>(null);
-  const scanLockedRef = useRef(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const mountedRef = useRef(true);
-  const camerasRef = useRef<CameraDevice[]>([]);
-  const lastErrorRef = useRef<unknown>(null);
-  const runIdRef = useRef(0);
-  const bootPromiseRef = useRef<Promise<void> | null>(null);
-  const scanAttemptsRef = useRef(0);
+  const streamRef = useRef<MediaStream | null>(null);
+  const detectorRef = useRef<BarcodeDetector | null>(null);
+  const lockRef = useRef(false);
+  const detectingRef = useRef(false);
+  const pausedRef = useRef(false);
+  const startTokenRef = useRef(0);
+  const manualCameraRef = useRef(false);
+  const attemptsRef = useRef(0);
+  const detectFailuresRef = useRef(0);
+  const wasmErrorShownRef = useRef(false);
+  const cooldownRef = useRef<number | null>(null);
 
-  const [cameras, setCameras] = useState<CameraDevice[]>([]);
-  const [camerasReady, setCamerasReady] = useState(false);
+  const [cameras, setCameras] = useState<CameraInfo[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null);
   const [activeCameraId, setActiveCameraId] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(true);
   const [isFileScanning, setIsFileScanning] = useState(false);
-  const [restartToken, setRestartToken] = useState(0);
-  // ZXing JS lee 1D de forma más confiable en Chrome/Brave sobre Windows.
-  const [engine, setEngine] = useState<'zxing' | 'native'>('zxing');
+  const [detectedCode, setDetectedCode] = useState<string | null>(null);
   const [scanAttempts, setScanAttempts] = useState(0);
 
   useEffect(() => {
     onScanRef.current = onScan;
   }, [onScan]);
 
-  // Refresca el contador de frames sin re-renderizar en cada intento fallido.
+  // Refresca el contador sin re-renderizar en cada frame.
   useEffect(() => {
-    const timer = setInterval(() => {
-      setScanAttempts(scanAttemptsRef.current);
+    const timer = window.setInterval(() => {
+      setScanAttempts(attemptsRef.current);
     }, 500);
-    return () => clearInterval(timer);
+    return () => window.clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => { mountedRef.current = false; };
-  }, []);
-
-  const stopCurrentScanner = async () => {
-    const scanner = scannerRef.current;
-    if (!scanner) return;
-    scannerRef.current = null;
-    try {
-      if (scanner.isScanning) {
-        await scanner.stop();
-      }
-    } catch (err) {
-      console.warn('No se pudo detener el escáner anterior:', err);
-    }
-    try {
-      scanner.clear();
-    } catch (err) {
-      console.warn('No se pudo limpiar el escáner anterior:', err);
-    }
-  };
-
-  // Detecta cámaras y prioriza una cámara física real sobre cámaras virtuales.
-  useEffect(() => {
-    let cancelled = false;
-
-    Html5Qrcode.getCameras()
-      .then(devices => {
-        if (cancelled) return;
-        const list = devices || [];
-        camerasRef.current = list;
-        setCameras(list);
-
-        if (list.length > 0) {
-          const physicalCamera = list.find(camera => !VIRTUAL_CAMERA_PATTERN.test(camera.label || ''));
-          const preferredCamera = physicalCamera || list[0];
-          setSelectedCameraId(previous => previous ?? preferredCamera.id);
-          setActiveCameraId(previous => previous ?? preferredCamera.id);
-          console.info(
-            'Cámaras detectadas:',
-            list.map(camera => `${camera.label || '(sin nombre)'} [${camera.id}]`).join(' | '),
-            '→ preferida:',
-            preferredCamera.label || preferredCamera.id
-          );
+  const stopStream = useCallback(() => {
+    const stream = streamRef.current;
+    streamRef.current = null;
+    if (stream) {
+      stream.getTracks().forEach(track => {
+        try {
+          track.stop();
+        } catch {
+          // El track ya estaba detenido.
         }
-
-        setCamerasReady(true);
-      })
-      .catch(err => {
-        console.warn('No se pudieron enumerar las cámaras:', err);
-        if (!cancelled) setCamerasReady(true);
       });
-
-    return () => { cancelled = true; };
+    }
+    const video = videoRef.current;
+    if (video) {
+      try {
+        video.pause();
+      } catch {
+        // Sin problema si el video ya estaba pausado.
+      }
+      video.srcObject = null;
+    }
   }, []);
 
-  useEffect(() => {
-    if (!camerasReady) return;
+  const refreshCameras = useCallback(async (): Promise<CameraInfo[]> => {
+    if (!navigator.mediaDevices?.enumerateDevices) return [];
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const list = devices
+        .filter(device => device.kind === 'videoinput')
+        .map<CameraInfo>(device => ({
+          id: device.deviceId,
+          label: device.label || ''
+        }))
+        .sort((a, b) => cameraScore(b) - cameraScore(a));
 
-    let cancelled = false;
-    const runId = ++runIdRef.current;
-    const isCurrent = () => !cancelled && runId === runIdRef.current;
+      setCameras(list);
+      return list;
+    } catch (err) {
+      console.warn('[BarcodeScanner] No se pudieron enumerar las cámaras:', err);
+      return [];
+    }
+  }, []);
 
+  const startCamera = useCallback(async (cameraId: string | null) => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setLocalError('Este navegador no permite acceder a la cámara. Usa HTTPS o "Subir foto".');
+      setIsStarting(false);
+      return;
+    }
+
+    const token = ++startTokenRef.current;
+    setIsStarting(true);
     setLocalError(null);
     setErrorDetail(null);
-    setIsStarting(true);
-    scanAttemptsRef.current = 0;
+    attemptsRef.current = 0;
+    detectFailuresRef.current = 0;
     setScanAttempts(0);
 
-    const buildAttempts = (): CameraAttempt[] => {
-      const attempts: CameraAttempt[] = [];
-      const pushAttempt = (attempt: CameraAttempt) => {
-        const exists = attempts.some(item =>
-          item.deviceId === attempt.deviceId &&
-          item.facingMode === attempt.facingMode &&
-          item.hd === attempt.hd
-        );
-        if (!exists) attempts.push(attempt);
-      };
+    stopStream();
+    // Pausa para que Windows libere el dispositivo antes de reabrirlo.
+    await delay(150);
+    if (token !== startTokenRef.current) return;
 
-      if (selectedCameraId) {
-        pushAttempt({ deviceId: selectedCameraId, hd: true });
-        pushAttempt({ deviceId: selectedCameraId, hd: false });
-      }
-
-      camerasRef.current.forEach(camera => {
-        if (camera.id === selectedCameraId) return;
-        pushAttempt({ deviceId: camera.id, hd: true });
-        pushAttempt({ deviceId: camera.id, hd: false });
-      });
-
-      if (!selectedCameraId && camerasRef.current.length === 0) {
-        pushAttempt({ facingMode: 'environment', hd: true });
-        pushAttempt({ facingMode: 'environment', hd: false });
-      }
-
-      // Últimos recursos: cámara por orientación, sin restricciones de resolución.
-      pushAttempt({ facingMode: 'environment', hd: false });
-      pushAttempt({ facingMode: 'user', hd: false });
-
-      return attempts;
+    const hd: MediaTrackConstraints = {
+      width: { ideal: 1280 },
+      height: { ideal: 720 }
     };
 
-    const formatos = getFormatsForMode(mode);
-    const qrbox: Html5QrcodeCameraScanConfig['qrbox'] = (viewfinderWidth, viewfinderHeight) =>
-      mode === 'barcode'
-        ? {
-            width: Math.floor(viewfinderWidth * 0.92),
-            height: Math.floor(viewfinderHeight * 0.65)
-          }
-        : {
-            width: Math.floor(Math.min(viewfinderWidth, viewfinderHeight) * 0.78),
-            height: Math.floor(Math.min(viewfinderWidth, viewfinderHeight) * 0.78)
-          };
+    const attempts: MediaStreamConstraints[] = [];
+    if (cameraId) {
+      attempts.push({ video: { ...hd, deviceId: { exact: cameraId } }, audio: false });
+      attempts.push({ video: { deviceId: { exact: cameraId } }, audio: false });
+    } else {
+      attempts.push({ video: { ...hd, facingMode: { ideal: 'environment' } }, audio: false });
+      attempts.push({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+      attempts.push({ video: true, audio: false });
+    }
 
-    const safeStop = async (instance: Html5Qrcode | null) => {
-      if (!instance) return;
-      if (scannerRef.current === instance) {
-        scannerRef.current = null;
-      }
+    let lastError: unknown = null;
+
+    for (const constraints of attempts) {
       try {
-        if (instance.isScanning) {
-          await instance.stop();
-        }
-      } catch (err) {
-        console.warn('Error al detener intento de cámara:', err);
-      }
-      try {
-        instance.clear();
-      } catch (err) {
-        console.warn('Error al limpiar intento de cámara:', err);
-      }
-    };
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
-    const tryStartAttempt = async (attempt: CameraAttempt): Promise<boolean> => {
-      if (!isCurrent()) return false;
-
-      const element = document.getElementById(scannerId);
-      if (!element) return false;
-      element.innerHTML = '';
-
-      const instance = new Html5Qrcode(scannerId, {
-        formatsToSupport: formatos,
-        experimentalFeatures: {
-          // false = ZXing JS (1D confiable en Chrome/Brave Windows).
-          useBarCodeDetectorIfSupported: engine === 'native'
-        },
-        verbose: false
-      });
-      scannerRef.current = instance;
-
-      const videoConstraints: MediaTrackConstraints = attempt.deviceId
-        ? { deviceId: { exact: attempt.deviceId } }
-        : { facingMode: attempt.facingMode || 'environment' };
-
-      if (attempt.hd) {
-        videoConstraints.width = { ideal: 1280 };
-        videoConstraints.height = { ideal: 720 };
-      }
-
-      const config: Html5QrcodeCameraScanConfig = {
-        fps: 12,
-        qrbox,
-        disableFlip: false
-      };
-
-      try {
-        await instance.start(
-          videoConstraints,
-          config,
-          (decodedText) => {
-            if (!isCurrent() || scanLockedRef.current) return;
-            scanLockedRef.current = true;
-            if ('vibrate' in navigator) navigator.vibrate(80);
-            console.log('[BarcodeScanner] Detectado:', decodedText);
-            try {
-              instance.pause(true);
-            } catch {
-              // La pausa no es crítica.
-            }
-            onScanRef.current(decodedText);
-
-            // Si el padre no cierra el escáner (código no encontrado), se
-            // reactiva tras un breve enfriamiento para evitar ráfagas.
-            setTimeout(() => {
-              if (!isCurrent()) return;
-              scanLockedRef.current = false;
-              try {
-                if (instance.isScanning) instance.resume();
-              } catch {
-                // Sin problema si el escáner ya se detuvo.
-              }
-            }, 1500);
-          },
-          (frameError) => {
-            // Errores de lectura por frame: solo se cuentan para diagnóstico.
-            scanAttemptsRef.current += 1;
-            void frameError;
-          }
-        );
-
-        if (!isCurrent()) {
-          await safeStop(instance);
-          return false;
+        if (token !== startTokenRef.current) {
+          stream.getTracks().forEach(track => track.stop());
+          return;
         }
 
-        lastErrorRef.current = null;
-        setActiveCameraId(attempt.deviceId || null);
-        setLocalError(null);
-        setErrorDetail(null);
+        const video = videoRef.current;
+        if (!video) {
+          stream.getTracks().forEach(track => track.stop());
+          setIsStarting(false);
+          return;
+        }
+
+        streamRef.current = stream;
+        video.srcObject = stream;
+        try {
+          await video.play();
+        } catch {
+          // Algunos navegadores requieren un gesto del usuario para reproducir.
+        }
+
+        const trackSettings = stream.getVideoTracks()[0]?.getSettings?.();
+        const realDeviceId = trackSettings?.deviceId || cameraId || null;
+        if (realDeviceId) {
+          setSelectedCameraId(realDeviceId);
+          setActiveCameraId(realDeviceId);
+        }
         setIsStarting(false);
-        return true;
+        return;
       } catch (err) {
-        lastErrorRef.current = err;
-        console.warn(
-          `Intento de cámara fallido (${attempt.deviceId || attempt.facingMode || 'sin id'}, HD: ${attempt.hd}):`,
-          err
-        );
-        await safeStop(instance);
-        return false;
+        lastError = err;
+        console.warn('[BarcodeScanner] Intento de cámara fallido:', constraints, err);
+        await delay(200);
+        if (token !== startTokenRef.current) return;
+      }
+    }
+
+    if (token !== startTokenRef.current) return;
+    setLocalError(getFriendlyCameraError(lastError));
+    setErrorDetail(getTechnicalError(lastError));
+    setIsStarting(false);
+  }, [stopStream]);
+
+  // Arranque: pide permiso, enumera y prioriza cámara trasera/física.
+  useEffect(() => {
+    let disposed = false;
+
+    const boot = async () => {
+      await startCamera(null);
+      if (disposed) return;
+
+      const list = await refreshCameras();
+      if (disposed || manualCameraRef.current) return;
+
+      const physical = list.filter(camera => !VIRTUAL_CAMERA_PATTERN.test(camera.label));
+      const preferred =
+        physical.find(camera => BACK_CAMERA_PATTERN.test(camera.label)) ||
+        physical[0] ||
+        list.find(camera => BACK_CAMERA_PATTERN.test(camera.label)) ||
+        list[0];
+
+      if (!preferred) return;
+
+      const activeId = streamRef.current?.getVideoTracks()[0]?.getSettings?.().deviceId;
+      setSelectedCameraId(preferred.id);
+
+      if (preferred.id !== activeId) {
+        await startCamera(preferred.id);
       }
     };
 
-    const bootScanner = async () => {
-      // Detiene y limpia por completo la instancia anterior.
-      await stopCurrentScanner();
-      if (!isCurrent()) return;
+    void boot();
 
-      // Pausa obligatoria para que Windows libere el dispositivo.
-      await delay(250);
-      if (!isCurrent()) return;
+    return () => {
+      disposed = true;
+      startTokenRef.current += 1;
+      stopStream();
+    };
+  }, [startCamera, refreshCameras, stopStream]);
 
-      const attempts = buildAttempts();
-      let permissionDenied = false;
+  const handleDetected = useCallback((rawValue: string) => {
+    if (lockRef.current) return;
+    lockRef.current = true;
 
-      for (const attempt of attempts) {
-        if (!isCurrent()) return;
+    console.log('[BarcodeScanner] Detectado:', rawValue);
+    if ('vibrate' in navigator) navigator.vibrate(80);
 
-        const started = await tryStartAttempt(attempt);
-        if (started) return;
-        if (!isCurrent()) return;
+    setDetectedCode(rawValue);
+    onScanRef.current(rawValue);
 
-        if (isPermissionError(lastErrorRef.current)) {
-          permissionDenied = true;
-          break;
+    if (cooldownRef.current) window.clearTimeout(cooldownRef.current);
+    cooldownRef.current = window.setTimeout(() => {
+      lockRef.current = false;
+      setDetectedCode(null);
+      cooldownRef.current = null;
+    }, COOLDOWN_MS);
+  }, []);
+
+  // Bucle de escaneo sobre el <video>.
+  useEffect(() => {
+    let detector: BarcodeDetector | null = null;
+    try {
+      detector = new BarcodeDetector({ formats: MODE_FORMATS[mode] });
+    } catch (err) {
+      console.warn('[BarcodeScanner] Formatos no soportados, usando todos:', err);
+      try {
+        detector = new BarcodeDetector();
+      } catch (fallbackErr) {
+        console.error('[BarcodeScanner] No se pudo crear el detector:', fallbackErr);
+        detector = null;
+        setLocalError('El motor ZXing-WASM no está disponible en este navegador. Usa "Subir foto".');
+        setErrorDetail(getTechnicalError(fallbackErr));
+      }
+    }
+    detectorRef.current = detector;
+
+    let cancelled = false;
+
+    const tick = async () => {
+      const video = videoRef.current;
+      const activeDetector = detectorRef.current;
+      if (
+        cancelled ||
+        pausedRef.current ||
+        lockRef.current ||
+        detectingRef.current ||
+        !video ||
+        !activeDetector ||
+        video.readyState < 2 ||
+        video.videoWidth === 0
+      ) {
+        return;
+      }
+
+      detectingRef.current = true;
+      try {
+        const codes = await activeDetector.detect(video);
+        attemptsRef.current += 1;
+        detectFailuresRef.current = 0;
+        if (codes.length > 0 && !lockRef.current) {
+          handleDetected(codes[0].rawValue);
         }
-
-        await delay(250);
+      } catch (err) {
+        detectFailuresRef.current += 1;
+        // Si ZXing-WASM nunca logra analizar, se avisa una sola vez.
+        if (detectFailuresRef.current >= 5 && attemptsRef.current === 0 && !wasmErrorShownRef.current) {
+          wasmErrorShownRef.current = true;
+          console.warn('[BarcodeScanner] Error del motor ZXing-WASM:', err);
+          setLocalError('El motor ZXing-WASM no pudo analizar el video. Prueba con "Subir foto".');
+          setErrorDetail(getTechnicalError(err));
+        }
+      } finally {
+        detectingRef.current = false;
       }
-
-      if (!isCurrent()) return;
-
-      setLocalError(
-        permissionDenied
-          ? getFriendlyCameraError(lastErrorRef.current)
-          : `${getFriendlyCameraError(lastErrorRef.current)}`
-      );
-      setErrorDetail(getTechnicalError(lastErrorRef.current));
-      setIsStarting(false);
     };
 
-    const bootPromise = bootScanner();
-    bootPromiseRef.current = bootPromise;
-    void bootPromise.finally(() => {
-      if (bootPromiseRef.current === bootPromise) bootPromiseRef.current = null;
-    });
+    const timer = window.setInterval(() => {
+      void tick();
+    }, DETECT_INTERVAL_MS);
 
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
+      detectorRef.current = null;
     };
-  }, [camerasReady, mode, scannerId, selectedCameraId, restartToken, engine]);
+  }, [mode, handleDetected]);
 
-  // Limpieza final al cerrar el escáner.
   useEffect(() => {
     return () => {
-      runIdRef.current += 1;
-      void stopCurrentScanner();
+      if (cooldownRef.current) window.clearTimeout(cooldownRef.current);
     };
   }, []);
 
   const handleSwitchCamera = () => {
     if (cameras.length < 2 || isStarting) return;
+
+    manualCameraRef.current = true;
     const baseId = activeCameraId || selectedCameraId;
     const currentIndex = cameras.findIndex(camera => camera.id === baseId);
     const nextCamera = cameras[(currentIndex + 1) % cameras.length];
 
-    scanLockedRef.current = false;
+    lockRef.current = false;
+    setDetectedCode(null);
     setLocalError(null);
     setErrorDetail(null);
-    setActiveCameraId(nextCamera.id);
     setSelectedCameraId(nextCamera.id);
-  };
-
-  // Alterna entre el decodificador ZXing JS y el nativo (BarcodeDetector).
-  const handleToggleEngine = () => {
-    scanLockedRef.current = false;
-    scanAttemptsRef.current = 0;
-    setScanAttempts(0);
-    setLocalError(null);
-    setErrorDetail(null);
-    setEngine(prev => (prev === 'zxing' ? 'native' : 'zxing'));
+    setActiveCameraId(nextCamera.id);
+    void startCamera(nextCamera.id);
   };
 
   const handleFileScan = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -442,99 +415,62 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
     event.target.value = '';
     if (!file) return;
 
-    scanLockedRef.current = false;
+    pausedRef.current = true;
+    setIsFileScanning(true);
     setLocalError(null);
     setErrorDetail(null);
-    setIsFileScanning(true);
 
-    // Espera a que termine el arranque de cámara en curso: así Windows libera
-    // el dispositivo y scanFile no choca con un estado "SCANNING" a medias.
-    const pendingBoot = bootPromiseRef.current;
-    if (pendingBoot) {
-      try {
-        await pendingBoot;
-      } catch (bootError) {
-        console.warn('El arranque de cámara falló antes de leer la foto:', bootError);
-      }
-    }
-
-    // Desde aquí controlamos el escáner: invalida cualquier arranque pendiente.
-    runIdRef.current += 1;
-
-    let scanner = scannerRef.current;
-    if (!scanner) {
-      const element = document.getElementById(scannerId);
-      if (!element) {
-        setIsFileScanning(false);
-        return;
-      }
-      element.innerHTML = '';
-      scanner = new Html5Qrcode(scannerId, {
-        formatsToSupport: getFormatsForMode(mode),
-        experimentalFeatures: {
-          useBarCodeDetectorIfSupported: engine === 'native'
-        },
-        verbose: false
-      });
-      scannerRef.current = scanner;
-      setIsStarting(false);
-    }
-
-    const readFile = async (target: Html5Qrcode): Promise<string> => {
-      // scanFile solo funciona cuando la cámara está detenida.
-      if (target.isScanning) {
-        try {
-          await target.stop();
-        } catch (stopError) {
-          console.warn('No se pudo detener la cámara antes de leer la foto:', stopError);
-        }
-      }
-
-      try {
-        return await target.scanFile(file, true);
-      } catch (firstError) {
-        // Puede quedar una transición de estado tras detener la cámara.
-        console.warn('Primer intento de lectura de foto falló, reintentando:', firstError);
-        await delay(350);
-        try {
-          if (target.isScanning) await target.stop();
-        } catch (retryStopError) {
-          console.warn('No se pudo reiniciar el estado del escáner:', retryStopError);
-        }
-        return await target.scanFile(file, true);
-      }
-    };
+    let bitmap: ImageBitmap | null = null;
 
     try {
-      const decodedText = await readFile(scanner);
-      if (!scanLockedRef.current) {
-        scanLockedRef.current = true;
-        if ('vibrate' in navigator) navigator.vibrate(80);
-        onScanRef.current(decodedText);
+      const detector = detectorRef.current ?? new BarcodeDetector({ formats: MODE_FORMATS[mode] });
 
-        // Reactiva la cámara si el modal sigue abierto tras la lectura del archivo.
-        setTimeout(() => {
-          if (mountedRef.current) setRestartToken(token => token + 1);
-        }, 900);
+      let codes: Array<{ rawValue: string }> = [];
+      try {
+        bitmap = await createImageBitmap(file);
+        codes = await detector.detect(bitmap);
+      } catch (bitmapError) {
+        console.warn('[BarcodeScanner] createImageBitmap falló, intentando con el archivo:', bitmapError);
+        codes = await detector.detect(file);
       }
+
+      attemptsRef.current += 1;
+
+      if (!codes || codes.length === 0) {
+        setLocalError('La foto no contiene un código de barras o QR legible. Acércate más y evita reflejos.');
+        setErrorDetail('ZXing-WASM: 0 resultados en la imagen');
+        return;
+      }
+
+      // La lectura desde archivo siempre debe disparar, aunque el cooldown
+      // del video en vivo esté activo.
+      lockRef.current = false;
+      handleDetected(codes[0].rawValue);
     } catch (err) {
-      console.warn('Error al leer el código desde la imagen:', err);
-      setLocalError('No se pudo leer el código en la foto. Prueba con una imagen más nítida y bien iluminada.');
+      console.warn('[BarcodeScanner] Error al leer la foto:', err);
+      setLocalError('No se pudo leer el código de la imagen. Prueba con una foto más nítida y bien iluminada.');
       setErrorDetail(getTechnicalError(err));
-      scanLockedRef.current = false;
-      setRestartToken(token => token + 1);
     } finally {
+      if (bitmap) {
+        try {
+          bitmap.close();
+        } catch {
+          // El navegador liberará la memoria igualmente.
+        }
+      }
       setIsFileScanning(false);
+      pausedRef.current = false;
     }
   };
 
   const activeCameraIndex = cameras.findIndex(
     camera => camera.id === (activeCameraId || selectedCameraId)
   );
-  const cameraButtonLabel = cameras.length > 0
-    ? `Cámara ${activeCameraIndex >= 0 ? activeCameraIndex + 1 : 1}/${cameras.length}`
-    : 'Cambiar cámara';
   const activeCamera = activeCameraIndex >= 0 ? cameras[activeCameraIndex] : null;
+  const cameraButtonLabel =
+    cameras.length > 0
+      ? `Cámara ${activeCameraIndex >= 0 ? activeCameraIndex + 1 : 1}/${cameras.length}`
+      : 'Cambiar cámara';
   const visibleError = localError || errorMessage;
 
   return (
@@ -566,9 +502,13 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
       </div>
 
       <div className="flex-1 flex items-center justify-center bg-black relative overflow-hidden">
-        <div
+        <video
+          ref={videoRef}
           id={scannerId}
-          className="w-full max-w-xl bg-black overflow-hidden [&_video]:w-full [&_video]:h-auto"
+          className="w-full max-w-xl max-h-full bg-black object-contain"
+          autoPlay
+          playsInline
+          muted
         />
 
         {isStarting && (
@@ -578,8 +518,15 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
           </div>
         )}
 
+        {detectedCode && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 max-w-[92%] flex items-center gap-2 px-4 py-2.5 bg-emerald-500 text-white rounded-xl shadow-lg animate-in zoom-in-95">
+            <CheckCircle2 size={16} className="shrink-0" />
+            <span className="font-black text-xs truncate">{detectedCode}</span>
+          </div>
+        )}
+
         {visibleError && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 w-[90%] max-w-md bg-red-500 text-white px-4 py-2.5 rounded-xl shadow-lg animate-in slide-in-from-top duration-300 z-20">
+          <div className="absolute top-16 left-1/2 -translate-x-1/2 w-[90%] max-w-md bg-red-500 text-white px-4 py-2.5 rounded-xl shadow-lg animate-in slide-in-from-top duration-300 z-20">
             <p className="font-bold text-xs text-center">{visibleError}</p>
             {localError && errorDetail && (
               <p className="mt-1 text-[9px] font-mono font-normal text-center opacity-90 break-words leading-tight">
@@ -609,18 +556,8 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
             {isFileScanning ? 'LEYENDO FOTO...' : 'SUBIR FOTO'}
           </button>
 
-          {/* Diagnóstico discreto del decodificador activo */}
-          <div className="flex flex-wrap items-center justify-center gap-2 text-[9px] font-mono text-white/40">
-            <span>
-              Motor: {engine === 'native' ? 'Nativo' : 'ZXing'} · Frames analizados: {scanAttempts}
-            </span>
-            <button
-              onClick={handleToggleEngine}
-              className="px-2 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white/70 font-black uppercase tracking-wide transition-colors"
-              title="Alternar decodificador manualmente (prueba)"
-            >
-              Usar {engine === 'native' ? 'ZXing' : 'Nativo'}
-            </button>
+          <div className="text-[9px] font-mono text-white/40">
+            Motor: ZXing-WASM · Frames analizados: {scanAttempts}
           </div>
         </div>
       </div>
